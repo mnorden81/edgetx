@@ -71,21 +71,28 @@ jobs:
           cat prs.json
 
       - name: Jeden PR auf den Nightly-Stand mergen
+        shell: bash
         run: |
           : > included-prs.txt
           : > skipped-prs.txt
-          for row in $(jq -c '.[]' prs.json); do
-            num=$(echo "$row" | jq -r '.number')
-            title=$(echo "$row" | jq -r '.title')
-            url=$(echo "$row" | jq -r '.url')
-            git fetch upstream "refs/pull/${num}/head:pr-${num}"
-            if git merge --no-ff --no-edit "pr-${num}"; then
-              echo "#${num} ${title} (${url})" >> included-prs.txt
-            else
-              git merge --abort || true
-              echo "#${num} ${title} (${url}) -- KONFLIKT, übersprungen" >> skipped-prs.txt
-            fi
-          done
+          if ! jq -e 'type == "array"' prs.json > /dev/null 2>&1; then
+            echo "prs.json enthält kein gültiges JSON-Array – überspringe Merge-Schritt."
+            echo "Inhalt von prs.json:"
+            cat prs.json || true
+          else
+            while IFS= read -r row; do
+              num=$(printf '%s' "$row" | jq -r '.number')
+              title=$(printf '%s' "$row" | jq -r '.title')
+              url=$(printf '%s' "$row" | jq -r '.url')
+              git fetch upstream "refs/pull/${num}/head:pr-${num}"
+              if git merge --no-ff --no-edit "pr-${num}"; then
+                echo "#${num} ${title} (${url})" >> included-prs.txt
+              else
+                git merge --abort || true
+                echo "#${num} ${title} (${url}) -- KONFLIKT, übersprungen" >> skipped-prs.txt
+              fi
+            done < <(jq -c '.[]' prs.json)
+          fi
           echo "=== Eingebaut ==="; cat included-prs.txt
           echo "=== Übersprungen (Merge-Konflikt) ==="; cat skipped-prs.txt
 
