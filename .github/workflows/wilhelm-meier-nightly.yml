@@ -69,10 +69,12 @@ jobs:
         run: |
           : > included-prs.txt
           : > skipped-prs.txt
-          for row in $(jq -c '.[]' prs.json); do
-            num=$(echo "$row" | jq -r '.number')
-            title=$(echo "$row" | jq -r '.title')
-            url=$(echo "$row" | jq -r '.url')
+          count=$(jq 'length' prs.json)
+          i=0
+          while [ "$i" -lt "$count" ]; do
+            num=$(jq -r ".[$i].number" prs.json)
+            title=$(jq -r ".[$i].title" prs.json)
+            url=$(jq -r ".[$i].url" prs.json)
             git fetch upstream "refs/pull/${num}/head:pr-${num}"
             if git merge --no-ff --no-edit "pr-${num}"; then
               echo "#${num} ${title} (${url})" >> included-prs.txt
@@ -80,6 +82,7 @@ jobs:
               git merge --abort || true
               echo "#${num} ${title} (${url}) -- KONFLIKT, übersprungen" >> skipped-prs.txt
             fi
+            i=$((i + 1))
           done
           echo "=== Eingebaut ==="; cat included-prs.txt
           echo "=== Übersprungen (Merge-Konflikt) ==="; cat skipped-prs.txt
