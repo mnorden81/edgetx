@@ -16,6 +16,8 @@ env:
   FLAVOR: tx16s             # bei Bedarf z.B. auf tx16smk3 ändern
   BUILD_BRANCH: wilhelm-meier-nightly
   RELEASE_TAG: wilhelm-meier-nightly
+  # Firmware-Sprache (Menüs/Texte auf dem Sender) und Power-LED-Farbe der TX16S:
+  EXTRA_OPTIONS: "-DTRANSLATIONS=DE -DPOWER_LED_BLUE=ON"
 
 permissions:
   contents: write
