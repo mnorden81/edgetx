@@ -44,13 +44,16 @@ jobs:
           git config --global --add safe.directory "$(pwd)"
 
       - name: Benötigte Tools installieren (gh, jq)
+        env:
+          GH_CLI_VERSION: "2.63.2"
         run: |
           apt-get update
-          apt-get install -y curl jq
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
-          apt-get update
-          apt-get install -y gh
+          apt-get install -y curl jq tar
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          install -m 0755 "/tmp/gh_${GH_CLI_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+          rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_CLI_VERSION}_linux_amd64"
+          gh --version
 
       - name: Upstream-Remote hinzufügen und main (nightly) laden
         run: |
