@@ -1,0 +1,128 @@
+name: TX16S nightly + Wilhelm Meier PRs
+
+# Wöchentlicher Build: nimmt den aktuellen EdgeTX-Nightly-Stand (main-Branch von
+# EdgeTX/edgetx), mergt alle offenen Pull Requests von wimalopaan (Wilhelm Meier)
+# darauf und baut daraus die TX16S-Firmware. Ergebnis landet als GitHub Release
+# "wilhelm-meier-nightly" in diesem Fork (Datei wird bei jedem Lauf ersetzt).
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # jeden Sonntag 03:00 UTC
+  workflow_dispatch: {}    # manuell über den "Run workflow"-Button auslösbar
+
+env:
+  UPSTREAM_REPO: EdgeTX/edgetx
+  PR_AUTHOR: wimalopaan
+  FLAVOR: tx16s             # bei Bedarf z.B. auf tx16smk3 ändern
+  BUILD_BRANCH: wilhelm-meier-nightly
+  RELEASE_TAG: wilhelm-meier-nightly
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/edgetx/edgetx-dev:latest
+      volumes:
+        - ${{ github.workspace }}:/src
+
+    steps:
+      - name: Fork auschecken
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Git-Identität & safe.directory setzen
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$(pwd)"
+
+      - name: Benötigte Tools installieren (gh, jq)
+        run: |
+          apt-get update
+          apt-get install -y curl jq
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+          apt-get update
+          apt-get install -y gh
+
+      - name: Upstream-Remote hinzufügen und main (nightly) laden
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream main
+          git checkout -B "${BUILD_BRANCH}" upstream/main
+
+      - name: Offene PRs von ${{ env.PR_AUTHOR }} ermitteln
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --repo "$UPSTREAM_REPO" --author "$PR_AUTHOR" --state open \
+            --json number,title,url --limit 100 > prs.json
+          echo "Gefundene PRs:"
+          cat prs.json
+
+      - name: Jeden PR auf den Nightly-Stand mergen
+        run: |
+          : > included-prs.txt
+          : > skipped-prs.txt
+          for row in $(jq -c '.[]' prs.json); do
+            num=$(echo "$row" | jq -r '.number')
+            title=$(echo "$row" | jq -r '.title')
+            url=$(echo "$row" | jq -r '.url')
+            git fetch upstream "refs/pull/${num}/head:pr-${num}"
+            if git merge --no-ff --no-edit "pr-${num}"; then
+              echo "#${num} ${title} (${url})" >> included-prs.txt
+            else
+              git merge --abort || true
+              echo "#${num} ${title} (${url}) -- KONFLIKT, übersprungen" >> skipped-prs.txt
+            fi
+          done
+          echo "=== Eingebaut ==="; cat included-prs.txt
+          echo "=== Übersprungen (Merge-Konflikt) ==="; cat skipped-prs.txt
+
+      - name: Build-Branch in den Fork pushen
+        run: |
+          git push -f origin "${BUILD_BRANCH}"
+
+      - name: Firmware für ${{ env.FLAVOR }} bauen
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
+        run: |
+          ./tools/build-gh.sh
+
+      - name: Artefakt mit festem Dateinamen einsammeln
+        run: |
+          mkdir -p out
+          if ls *.uf2 >/dev/null 2>&1; then
+            cp "$(ls *.uf2 | head -n1)" out/tx16s-firmware.uf2
+          fi
+          if ls *.bin >/dev/null 2>&1; then
+            cp "$(ls *.bin | head -n1)" out/tx16s-firmware.bin
+          fi
+          cp included-prs.txt out/included-prs.txt 2>/dev/null || touch out/included-prs.txt
+          cp skipped-prs.txt out/skipped-prs.txt 2>/dev/null || touch out/skipped-prs.txt
+          {
+            echo "TX16S Firmware -- EdgeTX nightly (main) + offene PRs von ${PR_AUTHOR}"
+            echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "Eingebaute PRs:"
+            cat out/included-prs.txt
+            echo ""
+            echo "Übersprungen wegen Merge-Konflikt:"
+            cat out/skipped-prs.txt
+          } > out/RELEASE_NOTES.txt
+          ls -la out/
+
+      - name: Release veröffentlichen (ersetzt vorherigen Lauf)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "${RELEASE_TAG}" --yes --cleanup-tag || true
+          gh release create "${RELEASE_TAG}" out/* \
+            --title "TX16S nightly + Wilhelm-Meier-PRs ($(date -u +%Y-%m-%d))" \
+            --notes-file out/RELEASE_NOTES.txt \
+            --prerelease
