@@ -133,8 +133,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete "${RELEASE_TAG}" --yes --cleanup-tag || true
+          gh release delete "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag || true
           gh release create "${RELEASE_TAG}" out/* \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "TX16S nightly + Wilhelm-Meier-PRs ($(date -u +%Y-%m-%d))" \
             --notes-file out/RELEASE_NOTES.txt \
             --prerelease
