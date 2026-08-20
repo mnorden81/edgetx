@@ -66,15 +66,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr list --repo "$UPSTREAM_REPO" --author "$PR_AUTHOR" --state open \
-            --json number,title,url --limit 100 > prs.json
+            --json number,title,url --limit 100 > prs.json || {
+              echo "::error::gh pr list ist fehlgeschlagen"
+              exit 1
+            }
           echo "Gefundene PRs:"
           cat prs.json
+          jq empty prs.json || {
+            echo "::error::prs.json enthält kein gültiges JSON"
+            exit 1
+          }
 
       - name: Jeden PR auf den Nightly-Stand mergen
         run: |
           : > included-prs.txt
           : > skipped-prs.txt
-          for row in $(jq -c '.[]' prs.json); do
+          jq -c '.[]' prs.json | while IFS= read -r row; do
             num=$(echo "$row" | jq -r '.number')
             title=$(echo "$row" | jq -r '.title')
             url=$(echo "$row" | jq -r '.url')
