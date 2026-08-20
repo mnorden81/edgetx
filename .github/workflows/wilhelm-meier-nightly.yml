@@ -117,6 +117,9 @@ jobs:
           fi
           cp included-prs.txt out/included-prs.txt 2>/dev/null || touch out/included-prs.txt
           cp skipped-prs.txt out/skipped-prs.txt 2>/dev/null || touch out/skipped-prs.txt
+          # Leere Dateien vermeiden (0-Byte-Anhänge lässt der Release-Asset-Upload nicht zu)
+          [ -s out/included-prs.txt ] || echo "(keine)" > out/included-prs.txt
+          [ -s out/skipped-prs.txt ] || echo "(keine)" > out/skipped-prs.txt
           {
             echo "TX16S Firmware -- EdgeTX nightly (main) + offene PRs von ${PR_AUTHOR}"
             echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
